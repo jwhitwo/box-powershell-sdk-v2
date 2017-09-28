@@ -1,4 +1,5 @@
 ﻿#BoxAdmin.psm1
+$Global:box_token = $null
 
 function Connect-Box()
 {
@@ -8,9 +9,11 @@ function Connect-Box()
        [string]$token
     )
 
+    $Global:box_token = $token
+
     #verify connection to Box API using provided token
     $uri = "https://api.box.com/2.0/users/me"
-    $headers = @{"Authorization"="Bearer $token"}
+    $headers = @{"Authorization"="Bearer $Global:box_token"}
 
     try{
         Write-host "Connecting to Box..."
@@ -24,5 +27,21 @@ function Connect-Box()
 
         return $null
     }
+}
 
+function Get-BoxUser()
+{
+    [CmdletBinding()]
+    Param(
+      [Parameter(Mandatory=$True,Position=1)]
+       [string]$login
+    )
+    #returns the Box user id number for a given username
+    $uri = "https://api.box.com/2.0/users?filter_term=" + $login
+    $headers = @{"Authorization"="Bearer $Global:box_token"} 
+    
+    $return = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers -ContentType "applicaiton/x-www-form-urlencoded"
+    
+    if($return.total_count -eq 0){return $null}
+    else {return $return.entries}
 }
