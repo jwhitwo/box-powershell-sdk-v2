@@ -1,55 +1,8 @@
-﻿# Content Functions
+﻿$token = "9JEVG5yO2G5BmCNdXIIGU26RcBF74NUK"
 
-function Move-BoxFolder($token, $newParent, $folderID)
-{
-    $uri = "https://api.box.com/2.0/folders/$folderID/"
-    $headers = @{"Authorization"="Bearer $token"}
- 
-    $json = '{"parent": {"id": "' + $newParentID + '"}}'
-   
-    $return = Invoke-RestMethod -Uri $uri -Method Put -Headers $headers -Body $json -ContentType "application/x-www-form-urlencoded"
-}
+$logfile = "migration.log"
 
-function Copy-BoxFolder($token, $newParentID, $folderID)
-{
-    $uri = "https://api.box.com/2.0/folders/$folderID/copy"
-    $headers = @{"Authorization"="Bearer $token"}
- 
-    $json = '{"parent": {"id": "' + $newParentID + '"}}'
-   
-    $return = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $json -ContentType "application/x-www-form-urlencoded"
-}
-
-function Get-BoxSubItems($token, $parent)
-{
-    #returns all items in the given parent folder
-    $uri = "https://api.box.com/2.0/folders/$parent/items"
-    $headers = @{"Authorization"="Bearer $token"}
-    $return = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers -ContentType "applicaiton/x-www-form-urlencoded"
-
-    if($return.total_count -le $return.limit)
-    {
-        return $return.entries
-    }
-    else
-    {
-        #handle paging when over 1000 entries are returned
-        $returned = $return.limit
-
-        $folders = $return.entries
-
-        while($returned -le $return.total_count)
-        {
-            #get the next page of folders
-            $uri = "https://api.box.com/2.0/users?limit=1000&offset=$returned"
-            $more_return = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers -ContentType "applicaiton/x-www-form-urlencoded"
-            $folders += $more_return.entries
-            $returned += $more_return.limit
-        }
-        return $folders
-    }
-}
-
+$log = "$(Get-date -Format G) : Starting Migration.`r`n"
 
 #takes iterates through each sub-folder any copies the folder to a username with the same name
 
@@ -58,40 +11,73 @@ $parent = "61105381618"
 
 #return all sub items of the parent
 $subfolders = Get-BoxSubItems -token $token -parent $parent
+$log += "$(Get-date -Format G) : $($subfolders.count) sub-items found."
+
+$log | Out-File $logfile -Append
 
 foreach($item in $subfolders)
 {
+    #verify the item is a folder and not a file
+    $log = "$(Get-date -Format G) : Elvaluating $($item.name)."
+
     if($item.type -eq "folder")
     {
-        #the item is a folder
+        $log += " Folder found. Belongs to $($item.name)."
+
         #get the destination user ID
         $copyToID = Get-BoxUserID -token $token -username $item.name
 
-        #create a new collaboration
-        $uri = "https://api.box.com/2.0/collaborations"
-        $headers = @{"Authorization"="Bearer $token"}
- 
-        $json = '{"item":{"id": "' + $item.id + '","type": "folder"},"accessible_by":{"id":"' + $copyToID + '","type":"user"},"role":"co-owner"}'
+        if($copyToID -eq $null)
+        {
+            #user is not found in Box
+            $log += " ERROR: User not found in Box!`r`n"
+        }
+        else
+        {
+            #user found in Box, continue
+            $log += " User found in Box ($copyToID)."
 
-        $return = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $json -ContentType "application/x-www-form-urlencoded"
+            #rename the folder to USERNAME's S Drive
+            $name = $item.name.Split('@')[0] + "'s S Drive"
+            $return = Set-BoxFolderName -token $token -folderID $item.id -name $name
 
-        #new collaboration created, now set the collaborator as the owner
+            $log += " Renamed to $name."
 
-        $collabID = $return.id
+            #create a new collaboration
+            $collabID = New-BoxCollaboration -token $token -folderID $item.id -userID $copyToID -role "co-owner"
+            $log += " Added collaborator."
 
-        $uri = "https://api.box.com/2.0/collaborations/$collabID"
- 
-        $json = '{"role":"owner"}'
-        $collab = Invoke-RestMethod -Uri $uri -Method Put -Headers $headers -Body $json -ContentType "application/x-www-form-urlencoded"
+            #new collaboration created, now set the collaborator as the owner
+            $return = Set-BoxCollaboration -token $token -collabID $collabID -role "owner"
 
-        #remove previous collaborator
-        $folderID = $item.id
+            if($return -eq $null){ $log += " ERROR: Unable to set collaborator!"}
+            else
+            {
+                $log += " Set new owner."
 
-        $uri = "https://api.box.com/2.0/folders/$folderID/collaborations"
-        $collab = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers -ContentType "application/x-www-form-urlencoded"
+                #remove previous collaborator
+                $folderID = $item.id
 
-        $collabID = $collab.entries[0].id
-        $uri = "https://api.box.com/2.0/collaborations/$collabID"
-        Invoke-RestMethod -Uri $uri -Method Delete -Headers $headers -ContentType "application/x-www-form-urlencoded"
+                #first, get the existing collaborator
+                $return = Get-BoxFolderCollab -token $token -folderID $folderID
+        
+                $collabID = $return.entries[0].id
+
+                $log += " Found new collaboration id ($collabID)." 
+
+                #remove the collaborator entry
+                Remove-BoxCollaborator -token $token -collabID $collabID
+                $log += " Previous collaborator removed."
+            }
+        }
+        
     }
+    else
+    {
+        $log += " Item is not a folder."
+    }
+
+    $log | Out-File $logfile -Append
 }
+
+$log = "$(Get-date -Format G) : Migration complete.`r`n"
