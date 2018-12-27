@@ -32,6 +32,7 @@ foreach($item in $subfolders)
         {
             #user is not found in Box
             $log += " ERROR: User not found in Box!`r`n"
+            $fail++
         }
         else
         {
@@ -39,7 +40,7 @@ foreach($item in $subfolders)
             $log += " User found in Box ($copyToID)."
 
             #rename the folder to USERNAME's S Drive
-            $name = "Test S Drive Migraton"
+            $name = "$($item.name)'s S drive migrated by ITS"
             #$return = Set-BoxFolderName -token $token -folderID $item.id -name $name
 
             $log += " Renamed to $name."
@@ -47,31 +48,8 @@ foreach($item in $subfolders)
             #create a new collaboration
             #$collabID = New-BoxCollaboration -token $token -folderID $item.id -userID $copyToID -role "co-owner"
             $log += " WhatIf - new collab on $($item.id) with $($copyToID) as co-owner."
-            $log += " Added collaborator."
-
-            #new collaboration created, now set the collaborator as the owner
-            $log += " Whatif - set new collab on $collabID as owner"
-            #$return = Set-BoxCollaboration -token $token -collabID $collabID -role "owner"
-
-            if($return -eq $null){ $log += " ERROR: Unable to set collaborator!"}
-            else
-            {
-                $log += " Set new owner."
-
-                #remove previous collaborator
-               # $folderID = $item.id
-
-                #first, get the existing collaborator
-                #$return = Get-BoxFolderCollab -token $token -folderID $folderID
-        
-            #    $collabID = $return.entries[0].id
-
-             #   $log += " Found new collaboration id ($collabID)." 
-
-                #remove the collaborator entry
-            #    Remove-BoxCollaborator -token $token -collabID $collabID
-                $log += " Previous collaborator removed."
-            }
+            
+            $success++
         }
         
     }
@@ -80,7 +58,9 @@ foreach($item in $subfolders)
         $log += " Item is not a folder."
     }
 
+
     $log | Out-File $logfile -Append
 }
 
-$log = "$(Get-date -Format G) : Migration complete.`r`n"
+$log = "$(Get-date -Format G) : WhatIf complete. Success: $sucess Failure: $fail`r`n"
+$log | Out-File $logfile -Append
