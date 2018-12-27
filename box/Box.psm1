@@ -368,7 +368,7 @@ function Get-BoxSubItems($token, $parent)
         while($returned -le $return.total_count)
         {
             #get the next page of folders
-            $uri = "https://api.box.com/2.0/users?limit=1000&offset=$returned"
+            $uri = "https://api.box.com/2.0/folders/$parent/items?limit=1000&offset=$returned"
             $more_return = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers -ContentType "applicaiton/x-www-form-urlencoded"
             $folders += $more_return.entries
             $returned += $more_return.limit
